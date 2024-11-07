@@ -1,0 +1,151 @@
+---
+title: "Description of Test Run Efficiency"
+author: "Brandi Pessman"
+date: "2024-11-05"
+output: html_document
+---
+
+```{r libraries, include = FALSE, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(purrr)
+```
+
+```{r import meta, include = FALSE, message = FALSE, warning = FALSE}
+test_df <- read.csv("preliminary_Leg1_diet_notroch//test_run.csv")
+```
+
+```{r import results, include = FALSE, message = FALSE, warning = FALSE}
+datapath = "/Users/bjpessman/Documents/phd_research_code/Schizocosa_Visual/preliminary_Leg1_diet_notroch/results"
+setwd(datapath)
+csv_files_ls = list.files(path = datapath, pattern = "*.csv")
+csv_files_df <- lapply(csv_files_ls, function(x) {
+  name_prefix <- sub("(.*)DLC.*", "\\1", x)
+  data <- read.table(file = x, header = TRUE, sep =",", skip = 3)
+  data$filename_prefix <- name_prefix
+  return(data)
+}
+    )
+combined_df <- do.call("rbind", lapply(csv_files_df, as.data.frame))
+```
+
+```{r wrangle, include = FALSE, message = FALSE, warning = FALSE}
+combined_df <- combined_df %>% 
+  select(filename_prefix, everything())
+colnames(combined_df) <- c("Video", "Frame", "TR1_x", "TR1_y", "TR1_likelihood", "PR1_x", "PR1_y", "PR1_likelihood", "TL1_x", "TL1_y", "TL1_likelihood", "PL1_x", "PL1_y", "PL1_likelihood", "AME_x", "AME_y", "AME_likelihood", "Spin_x", "Spin_y", "Spin_likelihood")
+df <- left_join(combined_df, test_df, by = "Video")
+```
+
+```{r format parts, include = FALSE, message = FALSE, warning = FALSE}
+# Assuming df is your data frame
+df_parts <- df %>%
+  pivot_longer(
+    cols = c(TR1_x:Spin_likelihood),
+    names_to = c("Part", ".value"),
+    names_pattern = "(.*)_(x|y|likelihood)"
+  )
+
+df_parts_prop <- df_parts %>% 
+  filter(likelihood >= 0.6) %>% 
+  group_by(Species, Trained, Video, Part)  %>% 
+  summarize(total_frames = n(), 
+            non_na_frames = sum(!is.na(x)),
+            prop = non_na_frames / total_frames,
+            avg_likelihood = mean(likelihood, na.rm = TRUE))
+```
+
+# The Proportion of Labeled Frames and Average Likelihood for Each Part
+
+```{r graph parts, echo = FALSE, message = FALSE, warning = FALSE, fig.width = 8, fig.height = 12}
+df_parts_prop %>% 
+  mutate(Part = fct_relevel(factor(Part), "TR1", "TL1", "PR1", "PL1", "AME", "Spin"),
+         Trained = fct_recode(factor(Trained), "In Training" = "Yes", "Not in Training" = "No")) %>% 
+  ggplot() +
+  geom_bar(aes(x = Part, y = prop, fill = avg_likelihood), stat = "identity", position = "identity", color = "black") +
+  ylab("Proportion of Frames Labeled") +
+  labs(fill = "Avg. Likelihood") +
+  scale_y_continuous(limits = c(0, 1), breaks = c(0, 0.5, 1)) +
+  scale_fill_gradient(low = "white", high = "black", limits = c(0.6, 1)) +
+  theme_classic() +
+  theme(axis.text = element_text(color = "black", size = 10),
+        axis.title = element_text(color = "black", size = 10)) +
+  facet_grid(Species ~ Trained)
+```
+
+```{r format all, include = FALSE, message = FALSE, warning = FALSE}
+df_all <- df %>%
+  mutate(Species = factor(Species),
+         Trained = factor(Trained),
+         Video = factor(Video)) %>% 
+  select(-AME_y, -AME_x, -AME_likelihood) %>% 
+  group_by(Species, Trained, Video) %>%
+  summarize(
+    total_frames = n(),
+    non_na_frames = sum(complete.cases(across(TR1_x:Spin_likelihood))),
+    prop = non_na_frames / total_frames,
+    .groups = 'drop'
+  ) 
+```
+
+# The Proportion of Frames Completely Labeled
+
+```{r graph all, echo = FALSE, message = FALSE, warning = FALSE}
+df_all %>% 
+  mutate(Trained = fct_relevel(factor(Trained), "Yes", "No")) %>% 
+  ggplot() +
+  geom_bar(aes(x = Species, y = prop, fill = Trained), stat = "identity", position = "dodge", color = "black") +
+#  geom_bar(aes(x = Species, y = non_na_frames, fill = Trained), stat = "identity", position = "dodge", color = "black") +
+  scale_fill_manual(values = c("grey30", "grey90")) +
+  ylab("Proportion of Frames with All Parts Labeled") +
+#  ylab("Number of Frames with All Parts Labeled") +
+  theme_classic() +
+  theme(axis.text = element_text(color = "black", size = 10),
+        axis.title = element_text(color = "black", size = 10),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        legend.position = "top")
+```
+
+# Time to Run on Remote by Video Length
+
+There are four computers that can handle the requirements set in the submission file. If it takes about an hour for analyses to run and there are 980 videos, it would take a minimum of 10 days, but more likely 2-3 weeks to run all videos through. It may take significantly less time if we do not build labeled videos and plot trajectories for each video analyzed (i.e., just running analysis and filtering the predictions). Running 39 videos took about 12 hours; at that rate, it would take about 12.5 days to finish all 980.
+
+```{r graph runtime, echo = FALSE, message = FALSE, warning = FALSE}
+test_df %>% 
+  mutate(SlotMin = TimeSlotBusy / 60,
+         LengthMin = Length / 60) %>% 
+  ggplot(aes(x = LengthMin, y = SlotMin)) +
+  geom_point() +
+  geom_smooth(method = 'lm') +
+  xlab("Video Length (Minutes)") +
+  ylab("Time to Run (Minutes)") +
+  scale_x_continuous(limits = c(4.5, 8), breaks = c(5, 6, 7, 8)) +
+  theme_classic() +
+  theme(axis.text = element_text(color = "black", size = 10),
+        axis.title = element_text(color = "black", size = 10))
+```
+
+```{r graph overlap, include = FALSE, message = FALSE, warning = FALSE}
+df_parts <- df_parts %>%
+  filter(likelihood >= 0.6) %>% 
+  mutate(Labeled = ifelse(!is.na(x) | !is.na(y), 1, 0)) 
+
+videos <- unique(df_parts$Video)
+plots <- map(videos, function(video) {
+  # Extract Species and Trained for the current video
+  species <- unique(df_parts$Species[df_parts$Video == video])
+  trained <- unique(df_parts$Trained[df_parts$Video == video])
+  
+  df_parts %>%
+    filter(Video == video) %>%
+    mutate(Part = fct_relevel(factor(Part), "TR1", "PR1", "TL1", "PL1", "AME", "Spin")) %>% 
+    ggplot(aes(x = Frame, y = Labeled, color = likelihood)) +
+    geom_point(size = 0.01, alpha = 0.1) +
+    scale_y_continuous(limits = c(0.99, 1.01)) +
+    scale_color_gradient(low = "white", high = "darkblue", limits = c(0, 1)) +
+    facet_wrap(~Part, ncol = 1) +
+    labs(title = paste("Species:", species, "| Trained:", trained, "| Video:", video)) +
+    theme_classic() +
+    theme(axis.text.y = element_blank())
+})
+
+walk2(plots, videos, ~ggsave(paste0("plots/plot_", .y, ".png"), plot = .x))
+```
