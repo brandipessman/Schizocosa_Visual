@@ -1,0 +1,6 @@
+mkdir $HOME/tmp
+export TMPDIR=$HOME/tmp
+export APPTAINER_TMPDIR=$HOME/tmp
+export APPTAINER_CACHEDIR=$HOME/tmp
+
+apptainer build --fakeroot /ospool/ap40/data/brandi.pressman/DeepLabCut.sif deeplabcut.def

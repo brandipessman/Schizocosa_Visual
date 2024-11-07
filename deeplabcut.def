@@ -1,0 +1,52 @@
+Bootstrap: docker
+From: nvidia/cuda:11.7.1-cudnn8-devel-ubuntu22.04
+ 
+%environment
+    # Set environment variables
+    #export DEBIAN_FRONTEND=noninteractive
+    #export LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda/extras/CUPTI/lib64:$LD_LIBRARY_PATH
+    export TF_TRT_ENABLE=1
+ 
+%post
+    export DEBIAN_FRONTEND=noninteractive
+
+    # Update and install dependencies
+    apt-get update -yy
+    apt-get install -yy \
+        python3-pip \
+        ffmpeg \
+        libsm6 \
+        libxext6 \
+        gnupg \
+        ca-certificates
+    apt-get clean -yy
+
+    python3 --version
+ 
+    # Install DeepLabCut and other Python dependencies
+    python3.10 -m pip install --upgrade \
+        deeplabcut==3.0.0rc4 \
+        numpy \
+        tensorflow==2.10 \
+        tensorpack==0.11 \
+        tensorrt \
+        tf_slim \
+        torch==2.4.1
+ 
+    # Fix protocol buffer version
+    python3.10 -m pip install protobuf==3.19.5
+ 
+    mv /usr/local/lib/python3.10/dist-packages/deeplabcut/pose_estimation_tensorflow/models/pretrained /usr/local/lib/python3.10/dist-packages/deeplabcut/pose_estimation_tensorflow/models/pretrained.ORIG
+    ln -s /tmp/pretrained /usr/local/lib/python3.10/dist-packages/deeplabcut/pose_estimation_tensorflow/models/pretrained
+
+    rm -rf $HOME/tmp
+    mkdir $HOME/tmp
+    export TMPDIR=$HOME/tmp
+    export APPTAINER_TMPDIR=$HOME/tmp
+    export APPTAINER_CACHEDIR=$HOME/tmp
+
+
+    # keep the image as small as possible
+    apt-get clean -yy
+    rm -rf /root/.cache
+
